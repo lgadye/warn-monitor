@@ -142,7 +142,7 @@ def parse_xlsx(xlsx_bytes):
                             print(f"[{datetime.now()}] ✓ Found valid data: sheet {sheet_idx}, skiprows={skiprows}")
                             print(f"[{datetime.now()}] Sheet name: '{wb.sheetnames[sheet_idx]}'")
                             print(f"[{datetime.now()}] Found {len(df)} total WARN notices")
-                            print(f"[{datetime.now()}] Columns: {list(df.columns)[:6]}")
+                            print(f"[{datetime.now()}] All columns: {list(df.columns)}")
                             return df
             except Exception as e:
                 continue
@@ -178,21 +178,33 @@ def filter_company_records(df, target_company, threshold=85):
     print(f"[{datetime.now()}] Filtering for company: {target_company}")
     
     # Try to identify the company name column
-    # Look for columns that might contain company names
-    possible_keywords = ['company', 'employer', 'business', 'name', 'notice']
+    # Prioritize company-specific keywords (not just "notice" which could be "notice date")
+    high_priority_keywords = ['company', 'employer', 'business']
+    medium_priority_keywords = ['name']
+    
     company_col = None
     
-    # First pass: look for column names containing keywords
+    # First pass: high priority keywords
     for col in df.columns:
         col_lower = str(col).lower()
-        if any(keyword in col_lower for keyword in possible_keywords):
+        # Must contain company/employer/business AND not contain "date"
+        if any(keyword in col_lower for keyword in high_priority_keywords) and 'date' not in col_lower:
             company_col = col
-            print(f"[{datetime.now()}] Found company column by keyword: '{company_col}'")
+            print(f"[{datetime.now()}] Found company column (high priority): '{company_col}'")
             break
     
-    # Second pass: if no keyword match, find column with most unique text values
+    # Second pass: medium priority (just "name" but not date-related)
     if company_col is None:
-        print(f"[{datetime.now()}] No keyword match. Analyzing columns...")
+        for col in df.columns:
+            col_lower = str(col).lower()
+            if 'name' in col_lower and 'date' not in col_lower and 'notice' not in col_lower:
+                company_col = col
+                print(f"[{datetime.now()}] Found company column (medium priority): '{company_col}'")
+                break
+    
+    # Third pass: find column with most unique text values (heuristic)
+    if company_col is None:
+        print(f"[{datetime.now()}] No keyword match. Analyzing column uniqueness...")
         max_unique = 0
         for col in df.columns:
             try:
@@ -202,28 +214,35 @@ def filter_company_records(df, target_company, threshold=85):
                 # Skip numeric columns
                 if pd.api.types.is_numeric_dtype(df[col]):
                     continue
+                # Skip columns with "date" in the name
+                if 'date' in str(col).lower():
+                    continue
                 # Count unique non-null string values
                 unique_count = df[col].dropna().astype(str).nunique()
-                if unique_count > max_unique and unique_count > 10:  # Should have many unique companies
+                if unique_count > max_unique and unique_count > 20:  # Should have many unique companies
                     max_unique = unique_count
                     company_col = col
             except:
                 continue
         
         if company_col:
-            print(f"[{datetime.now()}] Selected column '{company_col}' ({max_unique} unique values)")
+            print(f"[{datetime.now()}] Selected column by uniqueness: '{company_col}' ({max_unique} unique values)")
     
-    # Fallback: use first non-datetime column
+    # Fallback: use first non-datetime, non-numeric column
     if company_col is None:
         for col in df.columns:
-            if not pd.api.types.is_datetime64_any_dtype(df[col]):
+            if (not pd.api.types.is_datetime64_any_dtype(df[col]) and 
+                not pd.api.types.is_numeric_dtype(df[col]) and
+                'date' not in str(col).lower()):
                 company_col = col
-                print(f"[{datetime.now()}] Using first text column as fallback: '{company_col}'")
+                print(f"[{datetime.now()}] Using first suitable column as fallback: '{company_col}'")
                 break
     
+    # Last resort
     if company_col is None:
         print(f"ERROR: Could not identify any suitable company column")
         company_col = df.columns[0]
+        print(f"[{datetime.now()}] Using first column: '{company_col}'")
     
     print(f"[{datetime.now()}] Using column '{company_col}' for company matching")
     
