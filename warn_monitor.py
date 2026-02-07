@@ -203,32 +203,6 @@ def filter_company_records(df, target_company, threshold=85):
     print(f"[{datetime.now()}] Found {len(matches)} matching records")
     return matches
 
-
----
-
-## What This Does
-
-**`header=3`** - Tells pandas to skip the first 3 rows (which are probably intro text/merged cells) and use row 4 as the actual column headers.
-
-**Better column detection** - The updated `filter_company_records` function will:
-1. Try to find columns with names like "Company", "Business", etc.
-2. If that fails, pick the column with the most unique text values (likely the company name)
-3. Print what it's doing so you can see in the logs
-
----
-
-## Test Again
-
-1. **Commit the changes** to `warn_monitor.py`
-2. **Reset the hash** in `warn_state.json` (set to `null`)
-3. **Run workflow**
-4. **Check logs** - you should now see:
-```
-   Columns detected: ['Company', 'Notice Date', 'Effective Date', ...]
-   Using column 'Company' for company matching
-   Found 1 matching records
-
-
 def compute_file_hash(xlsx_bytes):
     """Compute SHA256 hash of the XLSX file for change detection."""
     return hashlib.sha256(xlsx_bytes).hexdigest()
