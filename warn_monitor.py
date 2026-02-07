@@ -108,13 +108,15 @@ def parse_xlsx(xlsx_bytes):
     """Parse XLSX bytes into a pandas DataFrame."""
     print(f"[{datetime.now()}] Parsing XLSX file...")
     try:
-        # Read the "Detailed WARN Report" sheet (sheet index 2, or by name)
+        # Read the "Detailed WARN Report" sheet, skipping the first few header rows
         df = pd.read_excel(
             BytesIO(xlsx_bytes), 
             engine='openpyxl',
-            sheet_name='Detailed WARN Report'  # Specify the correct sheet
+            sheet_name='Detailed WARN Report',
+            header=3  # Skip first 3 rows to get to actual headers
         )
         print(f"[{datetime.now()}] Found {len(df)} total WARN notices in file")
+        print(f"[{datetime.now()}] Columns detected: {list(df.columns)[:5]}")  # Debug: show first 5 columns
         return df
     except Exception as e:
         print(f"ERROR: Failed to parse XLSX: {e}")
@@ -123,9 +125,11 @@ def parse_xlsx(xlsx_bytes):
             df = pd.read_excel(
                 BytesIO(xlsx_bytes), 
                 engine='openpyxl',
-                sheet_name=2  # Third sheet (0-indexed)
+                sheet_name=2,  # Third sheet (0-indexed)
+                header=3
             )
             print(f"[{datetime.now()}] Found {len(df)} total WARN notices in file (using sheet index)")
+            print(f"[{datetime.now()}] Columns detected: {list(df.columns)[:5]}")
             return df
         except Exception as e2:
             print(f"ERROR: Failed to parse XLSX with fallback: {e2}")
@@ -157,18 +161,37 @@ def filter_company_records(df, target_company, threshold=85):
     
     # Try to identify the company name column
     # Common column names in WARN notices
-    possible_columns = ['Company', 'Employer', 'Company Name', 'Business Name', 'Name']
+    possible_columns = ['Company', 'Employer', 'Company Name', 'Business Name', 'Name', 'Business']
     company_col = None
     
     for col in df.columns:
-        if any(pc.lower() in str(col).lower() for pc in possible_columns):
+        col_str = str(col).lower()
+        if any(pc.lower() in col_str for pc in possible_columns):
             company_col = col
             break
     
     if company_col is None:
-        print(f"WARNING: Could not identify company name column. Columns: {list(df.columns)}")
-        print("Using first column as company name column")
-        company_col = df.columns[0]
+        # If no match found, look for column with most non-null string values
+        # This is likely the company name column
+        print(f"WARNING: Could not identify company name column by name. Columns: {list(df.columns)}")
+        print("Attempting to find column with most company-like data...")
+        
+        # Find column with most unique non-null string values
+        best_col = None
+        max_unique = 0
+        for col in df.columns:
+            if df[col].dtype == 'object':  # String column
+                unique_count = df[col].nunique()
+                if unique_count > max_unique:
+                    max_unique = unique_count
+                    best_col = col
+        
+        if best_col is not None:
+            company_col = best_col
+            print(f"Selected column '{company_col}' (has {max_unique} unique values)")
+        else:
+            print("Using first column as fallback")
+            company_col = df.columns[0]
     
     print(f"[{datetime.now()}] Using column '{company_col}' for company matching")
     
@@ -179,6 +202,31 @@ def filter_company_records(df, target_company, threshold=85):
     
     print(f"[{datetime.now()}] Found {len(matches)} matching records")
     return matches
+
+
+---
+
+## What This Does
+
+**`header=3`** - Tells pandas to skip the first 3 rows (which are probably intro text/merged cells) and use row 4 as the actual column headers.
+
+**Better column detection** - The updated `filter_company_records` function will:
+1. Try to find columns with names like "Company", "Business", etc.
+2. If that fails, pick the column with the most unique text values (likely the company name)
+3. Print what it's doing so you can see in the logs
+
+---
+
+## Test Again
+
+1. **Commit the changes** to `warn_monitor.py`
+2. **Reset the hash** in `warn_state.json` (set to `null`)
+3. **Run workflow**
+4. **Check logs** - you should now see:
+```
+   Columns detected: ['Company', 'Notice Date', 'Effective Date', ...]
+   Using column 'Company' for company matching
+   Found 1 matching records
 
 
 def compute_file_hash(xlsx_bytes):
