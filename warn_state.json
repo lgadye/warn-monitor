@@ -1,13 +1,6 @@
 {
-  "last_file_hash": "682723f232cc7b30aa830fbba423cf0db555c8e55abd6dac822901f2165d5a12",
+  "last_file_hash": "null",
   "last_check": "2026-02-07T06:15:56.086786",
   "seen_notices": [],
-  "seen_notices_UCSF": [],
-  "seen_notices_UC_San_Francisco": [
-    "2025-07-16 00:00:00|2025-07-16 00:00:00|2025-09-15 00:00:00|Mental Health Association of San Francisco",
-    "2026-01-27 00:00:00|2026-01-28 00:00:00|2026-03-31 00:00:00|Pinterest Inc. (San Francisco)"
-  ],
-  "seen_notices_Fellers_LLC": [
-    "2025-08-27 00:00:00|2025-09-03 00:00:00|2025-10-24 00:00:00|Fellers LLC"
-  ]
+  "seen_notices_UCSF": []
 }
