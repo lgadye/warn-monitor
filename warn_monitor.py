@@ -108,48 +108,48 @@ def parse_xlsx(xlsx_bytes):
     """Parse XLSX bytes into a pandas DataFrame."""
     print(f"[{datetime.now()}] Parsing XLSX file...")
     
-    # Try multiple strategies to read the file correctly
-    strategies = [
-        # Strategy 1: Read sheet by name, skip various header rows
-        {'sheet_name': 'Detailed WARN Report', 'skiprows': 0},
-        {'sheet_name': 'Detailed WARN Report', 'skiprows': 1},
-        {'sheet_name': 'Detailed WARN Report', 'skiprows': 2},
-        {'sheet_name': 'Detailed WARN Report', 'skiprows': 3},
-        {'sheet_name': 'Detailed WARN Report', 'skiprows': 4},
-        # Strategy 2: Read sheet by index
-        {'sheet_name': 2, 'skiprows': 0},
-        {'sheet_name': 2, 'skiprows': 1},
-        {'sheet_name': 2, 'skiprows': 2},
-        {'sheet_name': 2, 'skiprows': 3},
-        {'sheet_name': 2, 'skiprows': 4},
-    ]
+    from openpyxl import load_workbook
     
-    for i, strategy in enumerate(strategies):
-        try:
-            df = pd.read_excel(
-                BytesIO(xlsx_bytes),
-                engine='openpyxl',
-                **strategy
-            )
-            
-            # Check if this looks like valid data
-            # Valid data should have: string column names, reasonable row count
-            if len(df) > 50:  # Should have many WARN notices
-                # Check if first column looks like text (company names or counties)
-                first_col_name = str(df.columns[0])
-                # Column names shouldn't be dates or numbers
-                if not first_col_name.startswith('2025') and not first_col_name.startswith('Unnamed'):
-                    print(f"[{datetime.now()}] Successfully parsed with strategy {i+1}")
-                    print(f"[{datetime.now()}] Found {len(df)} total WARN notices in file")
-                    print(f"[{datetime.now()}] Columns: {list(df.columns)[:5]}")
-                    return df
-        except Exception as e:
-            continue
+    # First, inspect what sheets exist
+    wb = load_workbook(BytesIO(xlsx_bytes))
+    print(f"[{datetime.now()}] Available sheets: {wb.sheetnames}")
     
-    # If all strategies fail, return the last attempt and let it fail downstream
-    print(f"ERROR: Could not find valid sheet structure. Using fallback.")
-    df = pd.read_excel(BytesIO(xlsx_bytes), engine='openpyxl', sheet_name=2, skiprows=3)
-    print(f"[{datetime.now()}] Found {len(df)} rows (may be incorrect)")
+    # Try all combinations of sheets and skip rows
+    for sheet_idx in range(min(5, len(wb.sheetnames))):  # Try first 5 sheets
+        for skiprows in range(6):  # Try skipping 0-5 rows
+            try:
+                df = pd.read_excel(
+                    BytesIO(xlsx_bytes),
+                    engine='openpyxl',
+                    sheet_name=sheet_idx,
+                    skiprows=skiprows
+                )
+                
+                # Validation: check if this looks like valid WARN data
+                if len(df) > 50:  # Should have many records
+                    # Get first column name
+                    first_col = str(df.columns[0])
+                    
+                    # Valid indicators: proper column names, not dates/Unnamed
+                    if (not first_col.startswith('Unnamed') and 
+                        not first_col.startswith('2025') and
+                        not first_col.startswith('2024') and
+                        len(first_col) < 100):  # Not a long description
+                        
+                        # Extra check: look for expected column patterns
+                        cols_str = ' '.join(str(c).lower() for c in df.columns[:10])
+                        if any(keyword in cols_str for keyword in ['county', 'company', 'notice', 'layoff', 'business']):
+                            print(f"[{datetime.now()}] ✓ Found valid data: sheet {sheet_idx}, skiprows={skiprows}")
+                            print(f"[{datetime.now()}] Sheet name: '{wb.sheetnames[sheet_idx]}'")
+                            print(f"[{datetime.now()}] Found {len(df)} total WARN notices")
+                            print(f"[{datetime.now()}] Columns: {list(df.columns)[:6]}")
+                            return df
+            except Exception as e:
+                continue
+    
+    # Fallback: use sheet 2 with 5 rows skipped (common pattern)
+    print(f"[{datetime.now()}] WARNING: No ideal parse found, using fallback")
+    df = pd.read_excel(BytesIO(xlsx_bytes), engine='openpyxl', sheet_name=2, skiprows=5)
     print(f"[{datetime.now()}] Columns: {list(df.columns)}")
     return df
 
