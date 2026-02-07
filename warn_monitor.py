@@ -165,8 +165,36 @@ def fuzzy_match_company(company_name, target, threshold=85):
     company_clean = str(company_name).strip().lower()
     target_clean = target.strip().lower()
     
+    # Exact match or substring match (case insensitive)
+    if target_clean in company_clean or company_clean in target_clean:
+        # But avoid matching just location names in parentheses
+        # e.g., "Pinterest (San Francisco)" shouldn't match "San Francisco"
+        # Check if target is ONLY a location suffix
+        if '(' in company_clean and target_clean in company_clean.split('(')[1]:
+            # Target appears only in parenthetical location - reject
+            return False
+        return True
+    
     # Calculate similarity score
     score = fuzz.token_set_ratio(company_clean, target_clean)
+    
+    # Extra validation for high-scoring matches
+    if score >= threshold:
+        # If target is short (like a location name), require exact word match
+        target_words = set(target_clean.split())
+        company_words = set(company_clean.split())
+        
+        # If target has common location words, be more strict
+        location_words = {'san', 'francisco', 'los', 'angeles', 'new', 'york', 'city'}
+        if target_words & location_words:  # Target contains location words
+            # Require at least one non-location word to match
+            non_location_target = target_words - location_words
+            non_location_company = company_words - location_words
+            
+            if non_location_target and not (non_location_target & non_location_company):
+                # No non-location words match - probably just matching the city name
+                return False
+    
     return score >= threshold
 
 
