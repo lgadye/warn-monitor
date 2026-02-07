@@ -1,0 +1,48 @@
+name: WARN Notice Monitor
+
+on:
+  schedule:
+    # Run every Monday at 9:00 AM UTC (adjust timezone as needed)
+    - cron: '0 9 * * 1'
+  
+  # Allow manual triggering from GitHub Actions tab
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Run WARN monitor
+        env:
+          # Store these as GitHub Secrets (Settings > Secrets and variables > Actions)
+          SMTP_SENDER_EMAIL: ${{ secrets.SMTP_SENDER_EMAIL }}
+          SMTP_SENDER_PASSWORD: ${{ secrets.SMTP_SENDER_PASSWORD }}
+          SMTP_RECIPIENT_EMAIL: ${{ secrets.SMTP_RECIPIENT_EMAIL }}
+        run: |
+          python warn_monitor.py
+      
+      - name: Commit state changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add warn_state.json
+          git diff --staged --quiet || git commit -m "Update WARN monitor state [skip ci]"
+      
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref }}
