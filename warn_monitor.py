@@ -27,7 +27,7 @@ import os
 CONFIG = {
     "warn_page_url": "https://edd.ca.gov/en/jobs_and_training/Layoff_Services_WARN/",
     # List of companies to monitor - add as many as you want
-    "target_companies": ["UCSF", "UC San Francisco", "Fellers LLC"],
+    "target_companies": ["UCSF", "UC San Francisco", "University of California, San Francisco"],
     "fuzzy_match_threshold": 85,  # Similarity score (0-100) for fuzzy matching
     "state_file": "warn_state.json",  # Tracks what we've already seen
     "email_alerts": True,  # Set to False to disable email notifications
