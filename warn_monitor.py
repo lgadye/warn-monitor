@@ -107,33 +107,51 @@ def download_xlsx(url):
 def parse_xlsx(xlsx_bytes):
     """Parse XLSX bytes into a pandas DataFrame."""
     print(f"[{datetime.now()}] Parsing XLSX file...")
-    try:
-        # Read the "Detailed WARN Report" sheet, skipping the first few header rows
-        df = pd.read_excel(
-            BytesIO(xlsx_bytes), 
-            engine='openpyxl',
-            sheet_name='Detailed WARN Report',
-            header=3  # Skip first 3 rows to get to actual headers
-        )
-        print(f"[{datetime.now()}] Found {len(df)} total WARN notices in file")
-        print(f"[{datetime.now()}] Columns detected: {list(df.columns)[:5]}")  # Debug: show first 5 columns
-        return df
-    except Exception as e:
-        print(f"ERROR: Failed to parse XLSX: {e}")
-        # Fallback: try by index if name doesn't work
+    
+    # Try multiple strategies to read the file correctly
+    strategies = [
+        # Strategy 1: Read sheet by name, skip various header rows
+        {'sheet_name': 'Detailed WARN Report', 'skiprows': 0},
+        {'sheet_name': 'Detailed WARN Report', 'skiprows': 1},
+        {'sheet_name': 'Detailed WARN Report', 'skiprows': 2},
+        {'sheet_name': 'Detailed WARN Report', 'skiprows': 3},
+        {'sheet_name': 'Detailed WARN Report', 'skiprows': 4},
+        # Strategy 2: Read sheet by index
+        {'sheet_name': 2, 'skiprows': 0},
+        {'sheet_name': 2, 'skiprows': 1},
+        {'sheet_name': 2, 'skiprows': 2},
+        {'sheet_name': 2, 'skiprows': 3},
+        {'sheet_name': 2, 'skiprows': 4},
+    ]
+    
+    for i, strategy in enumerate(strategies):
         try:
             df = pd.read_excel(
-                BytesIO(xlsx_bytes), 
+                BytesIO(xlsx_bytes),
                 engine='openpyxl',
-                sheet_name=2,  # Third sheet (0-indexed)
-                header=3
+                **strategy
             )
-            print(f"[{datetime.now()}] Found {len(df)} total WARN notices in file (using sheet index)")
-            print(f"[{datetime.now()}] Columns detected: {list(df.columns)[:5]}")
-            return df
-        except Exception as e2:
-            print(f"ERROR: Failed to parse XLSX with fallback: {e2}")
-            sys.exit(1)
+            
+            # Check if this looks like valid data
+            # Valid data should have: string column names, reasonable row count
+            if len(df) > 50:  # Should have many WARN notices
+                # Check if first column looks like text (company names or counties)
+                first_col_name = str(df.columns[0])
+                # Column names shouldn't be dates or numbers
+                if not first_col_name.startswith('2025') and not first_col_name.startswith('Unnamed'):
+                    print(f"[{datetime.now()}] Successfully parsed with strategy {i+1}")
+                    print(f"[{datetime.now()}] Found {len(df)} total WARN notices in file")
+                    print(f"[{datetime.now()}] Columns: {list(df.columns)[:5]}")
+                    return df
+        except Exception as e:
+            continue
+    
+    # If all strategies fail, return the last attempt and let it fail downstream
+    print(f"ERROR: Could not find valid sheet structure. Using fallback.")
+    df = pd.read_excel(BytesIO(xlsx_bytes), engine='openpyxl', sheet_name=2, skiprows=3)
+    print(f"[{datetime.now()}] Found {len(df)} rows (may be incorrect)")
+    print(f"[{datetime.now()}] Columns: {list(df.columns)}")
+    return df
 
 def fuzzy_match_company(company_name, target, threshold=85):
     """
@@ -160,38 +178,52 @@ def filter_company_records(df, target_company, threshold=85):
     print(f"[{datetime.now()}] Filtering for company: {target_company}")
     
     # Try to identify the company name column
-    # Common column names in WARN notices
-    possible_columns = ['Company', 'Employer', 'Company Name', 'Business Name', 'Name', 'Business']
+    # Look for columns that might contain company names
+    possible_keywords = ['company', 'employer', 'business', 'name', 'notice']
     company_col = None
     
+    # First pass: look for column names containing keywords
     for col in df.columns:
-        col_str = str(col).lower()
-        if any(pc.lower() in col_str for pc in possible_columns):
+        col_lower = str(col).lower()
+        if any(keyword in col_lower for keyword in possible_keywords):
             company_col = col
+            print(f"[{datetime.now()}] Found company column by keyword: '{company_col}'")
             break
     
+    # Second pass: if no keyword match, find column with most unique text values
     if company_col is None:
-        # If no match found, look for column with most non-null string values
-        # This is likely the company name column
-        print(f"WARNING: Could not identify company name column by name. Columns: {list(df.columns)}")
-        print("Attempting to find column with most company-like data...")
-        
-        # Find column with most unique non-null string values
-        best_col = None
+        print(f"[{datetime.now()}] No keyword match. Analyzing columns...")
         max_unique = 0
         for col in df.columns:
-            if df[col].dtype == 'object':  # String column
-                unique_count = df[col].nunique()
-                if unique_count > max_unique:
+            try:
+                # Skip datetime columns
+                if pd.api.types.is_datetime64_any_dtype(df[col]):
+                    continue
+                # Skip numeric columns
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    continue
+                # Count unique non-null string values
+                unique_count = df[col].dropna().astype(str).nunique()
+                if unique_count > max_unique and unique_count > 10:  # Should have many unique companies
                     max_unique = unique_count
-                    best_col = col
+                    company_col = col
+            except:
+                continue
         
-        if best_col is not None:
-            company_col = best_col
-            print(f"Selected column '{company_col}' (has {max_unique} unique values)")
-        else:
-            print("Using first column as fallback")
-            company_col = df.columns[0]
+        if company_col:
+            print(f"[{datetime.now()}] Selected column '{company_col}' ({max_unique} unique values)")
+    
+    # Fallback: use first non-datetime column
+    if company_col is None:
+        for col in df.columns:
+            if not pd.api.types.is_datetime64_any_dtype(df[col]):
+                company_col = col
+                print(f"[{datetime.now()}] Using first text column as fallback: '{company_col}'")
+                break
+    
+    if company_col is None:
+        print(f"ERROR: Could not identify any suitable company column")
+        company_col = df.columns[0]
     
     print(f"[{datetime.now()}] Using column '{company_col}' for company matching")
     
