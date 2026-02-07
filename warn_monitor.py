@@ -108,13 +108,28 @@ def parse_xlsx(xlsx_bytes):
     """Parse XLSX bytes into a pandas DataFrame."""
     print(f"[{datetime.now()}] Parsing XLSX file...")
     try:
-        df = pd.read_excel(BytesIO(xlsx_bytes), engine='openpyxl')
+        # Read the "Detailed WARN Report" sheet (sheet index 2, or by name)
+        df = pd.read_excel(
+            BytesIO(xlsx_bytes), 
+            engine='openpyxl',
+            sheet_name='Detailed WARN Report'  # Specify the correct sheet
+        )
         print(f"[{datetime.now()}] Found {len(df)} total WARN notices in file")
         return df
     except Exception as e:
         print(f"ERROR: Failed to parse XLSX: {e}")
-        sys.exit(1)
-
+        # Fallback: try by index if name doesn't work
+        try:
+            df = pd.read_excel(
+                BytesIO(xlsx_bytes), 
+                engine='openpyxl',
+                sheet_name=2  # Third sheet (0-indexed)
+            )
+            print(f"[{datetime.now()}] Found {len(df)} total WARN notices in file (using sheet index)")
+            return df
+        except Exception as e2:
+            print(f"ERROR: Failed to parse XLSX with fallback: {e2}")
+            sys.exit(1)
 
 def fuzzy_match_company(company_name, target, threshold=85):
     """
